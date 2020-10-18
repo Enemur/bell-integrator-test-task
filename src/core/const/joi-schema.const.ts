@@ -1,8 +1,8 @@
 import Joi from '@hapi/joi';
 import { IEnvConfig } from '../abstract/env-config.interface';
-import { JoiSchemeMap } from '../type/joi-schame-map.type';
+import { JoiSchemaMap } from '../type/joi-schema-map.type';
 
-export const JoiSchema: JoiSchemeMap<IEnvConfig> = {
+export const JoiSchema: JoiSchemaMap<IEnvConfig> = {
   NODE_ENV: Joi.string()
     .valid(['development', 'production', 'test'])
     .default('development'),

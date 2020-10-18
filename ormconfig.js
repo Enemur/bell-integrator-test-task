@@ -28,5 +28,7 @@ module.exports = {
 
   cli: {
     migrationsDir: 'src/migration'
-  }
+  },
+
+  dropSchema: process.env.DATABASE_DROP_SCHEMA === 'true',
 };

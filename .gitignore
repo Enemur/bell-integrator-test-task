@@ -34,4 +34,4 @@ lerna-debug.log*
 !.vscode/extensions.json
 
 .env
-/email-template/**/*.marko.js
+.env.test

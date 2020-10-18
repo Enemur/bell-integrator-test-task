@@ -6,6 +6,8 @@ import { CreateBookInputDTO } from '../dto/input/create-book.input.dto';
 import { InjectRepository } from 'typeorm-typedi-extensions';
 import { CreateAuthorInputDTO } from '../dto/input/create-author.input.dto';
 import { AuthorEntity } from '../entity/author.entity';
+import DataLoader from 'dataloader';
+import { IGraphqlContext } from '../core/abstract/graphql-context.interface';
 
 @Service()
 export class AppService {
@@ -44,8 +46,19 @@ export class AppService {
     });
   }
 
-  public async getAuthorById(authorId: number): Promise<AuthorEntity | undefined> {
-    return await this.authorRepository.getAuthorById(authorId);
+  public async loadAuthorField(book: BookEntity, context: IGraphqlContext, info: any): Promise<AuthorEntity> {
+    const { authorLoaders } = context;
+
+    let dataloader = authorLoaders.get(info.fieldNodes);
+    if (!dataloader) {
+      dataloader = new DataLoader(async (ids: ReadonlyArray<number>) => {
+        const rows = await this.authorRepository.findByIds(Array.from(ids));
+        return ids.map(id => rows.find(x => x.id === id)!);
+      });
+      authorLoaders.set(info.fieldNodes, dataloader);
+    }
+
+    return dataloader.load(book.authorId);
   }
 
   // endregion

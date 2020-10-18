@@ -12,6 +12,11 @@ import { AuthorRepository } from '../src/respository/author.repository';
 import { getConnection } from 'typeorm';
 import { BookRepository } from '../src/respository/book.repository';
 import { BookEntity } from '../src/entity/book.entity';
+import faker from 'faker';
+import { getRandomInt } from './util/get-random-int.util';
+import { AuthorEntity } from '../src/entity/author.entity';
+
+faker.seed(Date.now());
 
 describe('App Service', () => {
   let client: ApolloClient<NormalizedCacheObject>;
@@ -33,7 +38,7 @@ describe('App Service', () => {
     await server.listen(port);
   });
 
-  it('Create author', async () => {
+  it('should create author', async () => {
     const createAuthorSchema = gql`
       mutation CreateAuthor($name: String!) {
         createAuthor(name: $name) {
@@ -44,7 +49,7 @@ describe('App Service', () => {
     `;
 
     const dto: CreateAuthorInputDTO = {
-      name: 'author-1',
+      name: faker.name.findName(),
     };
 
     const result = await client.mutate({
@@ -52,11 +57,17 @@ describe('App Service', () => {
       variables: dto,
     });
 
-    const exists = !!(await authorRepository.getAuthorById(result.data.createAuthor.id));
+    const createdAuthor = await authorRepository.getAuthorById(result.data.createAuthor.id);
+
+    const exists = createdAuthor !== undefined;
     expect(exists).toBe(true);
+
+    if (createdAuthor) {
+      expect(createdAuthor.name).toBe(dto.name);
+    }
   });
 
-  it('Create book', async () => {
+  it('should create book', async () => {
     const createBookSchema = gql`
       mutation CreateBook($name: String!, $pageCount: Int!, $authorId: Int!) {
         createBook(name: $name, pageCount: $pageCount, authorId: $authorId) {
@@ -68,12 +79,12 @@ describe('App Service', () => {
       }
     `;
 
-    const author = await authorRepository.save({ name: 'author-2' });
+    const author = await authorRepository.save({ name: faker.name.findName() });
 
     const dto: CreateBookInputDTO = {
-      name: 'book-1',
+      name: faker.lorem.sentence(),
       authorId: author.id,
-      pageCount: 10,
+      pageCount: getRandomInt(1, 1000),
     };
 
     const result = await client.mutate({
@@ -81,16 +92,25 @@ describe('App Service', () => {
       variables: dto,
     });
 
-    const exists = !!(await bookRepository.getBookById(result.data.createBook.id));
+    const createdBook = await bookRepository.getBookById(result.data.createBook.id);
+
+    const exists = createdBook !== undefined;
     expect(exists).toBe(true);
+
+    if (createdBook) {
+      expect(createdBook.name).toBe(dto.name);
+      expect(createdBook.pageCount).toBe(dto.pageCount);
+      expect(createdBook.authorId).toBe(dto.authorId);
+    }
   });
 
-  it('Get books without authors', async () => {
+  it('should get books without authors', async () => {
     const getBooksSchema = gql`
       {
         books {
           id
           name
+          pageCount
           authorId
         }
       }
@@ -98,32 +118,41 @@ describe('App Service', () => {
 
     await bookRepository.clear();
 
-    const author = await authorRepository.save({ name: 'author-3' });
-
-    const booksInitData = [
-      { author: { id:  author.id }, name: 'book-1', pageCount: 1 },
-      { author: { id:  author.id }, name: 'book-2', pageCount: 2 },
-      { author: { id:  author.id }, name: 'book-3', pageCount: 3 }
-    ];
-
-    await bookRepository.save(booksInitData);
+    const { books } = await initBooksData();
 
     const result = await client.query({
       query: getBooksSchema,
     });
 
-    expect(result.data.books).toHaveLength(booksInitData.length);
-    result.data.books.forEach((book: BookEntity) => expect(book).not.toHaveProperty('author'));
+    expect(result.data.books).toHaveLength(books.length);
+
+    result.data.books.forEach((book: BookEntity) => {
+      expect(book).not.toHaveProperty('author');
+
+      const savedBook = books.find(x => x.id === book.id);
+
+      expect(savedBook).toBeDefined();
+
+      if (!savedBook) {
+        return;
+      }
+
+      expect(book.name).toBe(savedBook.name);
+      expect(book.authorId).toBe(savedBook.authorId);
+      expect(book.pageCount).toBe(savedBook.pageCount);
+    });
   });
 
-  it('Get books with authors', async () => {
+  it('should get books with authors', async () => {
     const getBooksSchema = gql`
       {
         books {
           id
           name
           authorId
+          pageCount
           author {
+            id
             name
           }
         }
@@ -132,23 +161,61 @@ describe('App Service', () => {
 
     await bookRepository.clear();
 
-    const author = await authorRepository.save({ name: 'author-3' });
-
-    const booksInitData = [
-      { author: { id:  author.id }, name: 'book-1', pageCount: 1 },
-      { author: { id:  author.id }, name: 'book-2', pageCount: 2 },
-      { author: { id:  author.id }, name: 'book-3', pageCount: 3 }
-    ];
-
-    await bookRepository.save(booksInitData);
-
+    const { authors, books } = await initBooksData();
 
     const result = await client.query({
       query: getBooksSchema,
     });
 
-    expect(result.data.books).toHaveLength(booksInitData.length);
+    expect(result.data.books).toHaveLength(books.length);
 
-    result.data.books.forEach((book: BookEntity) => expect(book).toHaveProperty('author'));
+    result.data.books.forEach((book: BookEntity) => {
+      expect(book).toHaveProperty('author');
+
+      const savedBook = books.find(x => x.id === book.id);
+      const author = authors.find(x => x.id === book.authorId);
+
+      expect(savedBook).toBeDefined();
+      expect(author).toBeDefined();
+
+      if (!savedBook || !author) {
+        return;
+      }
+
+      expect(book.name).toBe(savedBook.name);
+      expect(book.authorId).toBe(savedBook.authorId);
+      expect(book.pageCount).toBe(savedBook.pageCount);
+      expect(book.author.id).toBe(author.id);
+      expect(book.author.name).toBe(author.name);
+    });
   });
+
+  async function initBooksData(): Promise<{ books: BookEntity[], authors: AuthorEntity[] }> {
+    const countAuthors = getRandomInt(1, 5);
+    const promises = [];
+
+    for (let i = 0; i < countAuthors; i++) {
+      promises.push(
+        authorRepository.save({ name: faker.name.findName() })
+      );
+    }
+
+    const authors = await Promise.all(promises);
+
+    const countInitialData = getRandomInt(5, 15);
+    const booksInitData = [];
+
+    for (let i = 0; i < countInitialData; i++) {
+      const author = authors[getRandomInt(authors.length, 0)]
+
+      booksInitData.push({ author: { id:  author.id }, name: faker.lorem.sentence(), pageCount: getRandomInt(1, 1000) });
+    }
+
+    const books = await bookRepository.save(booksInitData);
+
+    return {
+      authors,
+      books,
+    };
+  }
 });
