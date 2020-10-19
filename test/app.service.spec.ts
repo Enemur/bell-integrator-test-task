@@ -16,7 +16,7 @@ import faker from 'faker';
 import { getRandomInt } from './util/get-random-int.util';
 import { AuthorEntity } from '../src/entity/author.entity';
 
-faker.seed(Date.now());
+faker.seed(1234534);
 
 describe('App Service', () => {
   let client: ApolloClient<NormalizedCacheObject>;
